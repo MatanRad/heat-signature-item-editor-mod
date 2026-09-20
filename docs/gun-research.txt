@@ -1,0 +1,81 @@
+silenced -> Noise 0.05 + trait + AudibleThroughWalls 0
+quiet -> Noise 0.6 + trait + AudibleThroughWalls 0
+loud -> Noise 0.6 + trait + AudibleThroughWalls 1
+
+
+Automatic -> SecondsBetweenUses 0.1 "Extreme Rapid Fire" trait
+Quickfire -> SecondsBetweenUses 0.3 "Rapid Fire" trait
+Non-automatic -> SecondsBetweenUses 0.666666666666667
+
+
+ChargeRate = Self Charging? Works on guns :)
+
+Concussive -> guns - Uses instead of Ammo, WeaponDamageMask 2
+Lethal -> guns - Ammo instead of uses, WeaponDamageMask 1
+Capacity == -1 -> uses ammo. Otherwise uses Uses. If Uses == 0 -> removed from inventory. Rechargeable == 1 causes the gun to show capacity ("Uses/Capacity" instead of "Uses" and not to be destroyed on done)
+
+
+WeaponDamageMask -> bit 1 -> lethal. bit 2 -> concussive. Bit 4 -> armor piercing (requires either bit 1 or 2, otherwise just draws a blood pool and does nothing)
+AmmoType -> 0 regular, 1 ammopiercing
+
+
+Rarity -> 0-4. 3 -> armor piercing/self-charging, 2-> rechargeable. 4- unique 
+
+
+
+pistol sprites -> 164 regular, 169 silenced, 159 armor piercing
+concussive pistol -> 154 regular, 157 automatic
+shotgun sprites -> 167 regular, 168 silenced
+sprites -> 169 pistol silenced
+
+things that affect sprites: regular/concusive + automatic + silenced + armor-piercing
+
+
+sprite index matrix:
+
+SetGunSprites:
+  RVA: 0x003F2E00
+  IDA: 0x007F2E00
+
+  High Velocity:
+    sprite: 160
+
+  Concussive:
+    no armor-piercing:
+      shotgun or super shotgun: 158
+      automatic: 156
+      otherwise: 154
+    armor-piercing:
+      automatic: 157
+      otherwise: 155
+    silenced does not affect the selected sprite
+
+  Lethal:
+    armor-piercing:
+      automatic or shotgun/super shotgun: 165
+      silenced: 151
+      otherwise: 159
+    no armor-piercing:
+      silenced:
+        automatic or shotgun/super shotgun: 168
+        otherwise: 169
+      not silenced:
+        shotgun/super shotgun:
+          automatic: 166
+          otherwise: 167
+        automatic:
+          random choice: 150, 152, 153
+        otherwise:
+          GunshotSoundIndex == 0: 164
+          other GunshotSoundIndex: random choice 161, 162, 163
+  concussive:
+    non-automatic:
+      regular: 
+      silenced:
+      armor-piercing:
+      silenced + armor-piercing: 155
+    automatic:
+      regular:
+      silenced:
+      armor-piercing:
+      silenced + armor-piercing:
