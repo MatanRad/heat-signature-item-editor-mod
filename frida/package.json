@@ -1,0 +1,22 @@
+{
+  "name": "heat-signature-frida-tools",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "npm run clean && npm run build:toolkit && npm run build:info && npm run build:character && npm run build:inventory && npm run build:properties && npm run build:variables && npm run build:clicks && npm run build:property-watch && npm run build:trace",
+    "build:toolkit": "frida-compile src/toolkit.js -o dist/toolkit.js -c",
+    "build:info": "frida-compile src/process-info.js -o dist/process-info.js -c",
+    "build:character": "frida-compile src/current-character.js -o dist/current-character.js -c",
+    "build:inventory": "frida-compile src/inventory.js -o dist/inventory.js -c",
+    "build:properties": "frida-compile src/dump-item-properties.js -o dist/dump-item-properties.js -c",
+    "build:variables": "frida-compile src/dump-variable-names.js -o dist/dump-variable-names.js -c",
+    "build:clicks": "frida-compile src/watch-inventory-clicks.js -o dist/watch-inventory-clicks.js -c",
+    "build:property-watch": "frida-compile src/watch-property.js -o dist/watch-property.js -c",
+    "build:trace": "frida-compile src/watch-script.js -o dist/watch-script.js -c",
+    "clean": "node -e \"const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true});fs.mkdirSync('dist',{recursive:true})\""
+  },
+  "devDependencies": {
+    "frida-compile": "19.0.5"
+  }
+}

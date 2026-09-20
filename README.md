@@ -58,4 +58,5 @@ Override `HEATSIG_MODLOADER_DIR` if the loader checkout is elsewhere. Set
 - `src/GunEditor.*` translates UI parameters into Heat Signature gun properties.
 - `src/GameMakerPropertyAccess.*` provides mod-local typed property access.
 - `docs/gun-research.txt` records observed gun-property and sprite behavior.
-- `docs/prototypes/frida-item-editor.js` preserves the exploratory Frida prototype.
+- [`frida/README.md`](frida/README.md) explains dynamic exploration and the
+  reusable Frida agents.

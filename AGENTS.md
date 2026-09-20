@@ -13,7 +13,8 @@ item-specific behavior here.
 - `src/GunEditor.*`: gun-domain snapshot and mutation rules.
 - `src/GameMakerPropertyAccess.*`: private typed wrapper over `HS_ModApi`.
 - `docs/gun-research.txt`: observed runtime behavior; consult when changing gun semantics.
-- `docs/prototypes/frida-item-editor.js`: exploratory reference, not production code.
+- `frida/README.md`: use for Frida workflows, native ABI facts, and safety boundaries.
+- `frida/archive/item-editor-prototype.js`: historical reference, not production code.
 
 ## Design rules
 

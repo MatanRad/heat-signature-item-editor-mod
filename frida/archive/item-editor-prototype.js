@@ -1,5 +1,9 @@
 "use strict";
 
+// Historical prototype retained for reference. Its RValue kind names and some
+// thread-safety assumptions predate frida/src/heat-signature.js. Use the
+// compiled toolkit for new investigations.
+
 if (
   Process.platform !== "windows" ||
   Process.arch !== "ia32" ||
