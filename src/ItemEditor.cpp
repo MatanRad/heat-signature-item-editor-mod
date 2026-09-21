@@ -1,9 +1,12 @@
 #include "ItemEditorWindow.h"
+#include "GameMakerPropertyAccess.h"
+#include "GmArgs.h"
 #include "ModInterface.h"
 
 #include <imgui.h>
 #include <windows.h>
 
+#include <cmath>
 #include <memory>
 #include <string>
 
@@ -26,10 +29,60 @@ namespace
         g_api->Log("ItemEditor", message.c_str());
     }
 
+    bool IsOwnedByDailyChallenger(int itemHandle, std::string& error)
+    {
+        const GameMakerPropertyAccess properties(g_api);
+        double owner = 0.0;
+        if (!properties.ReadNumber(itemHandle, "Owner", owner, error))
+            return false;
+
+        if (!std::isfinite(owner) || owner <= 0.0)
+        {
+            error = "Could not verify the selected item's owner";
+            return false;
+        }
+
+        const int ownerHandle = static_cast<int>(std::llround(owner));
+        double dailyChallenge = 0.0;
+        if (!properties.ReadNumber(
+                ownerHandle,
+                "DailyChallenge",
+                dailyChallenge,
+                error))
+        {
+            return false;
+        }
+
+        return dailyChallenge > 0.0;
+    }
+
+    void ShowDailyChallengeBlockedMessage(
+        CInstance* self,
+        CInstance* other)
+    {
+        if (!self || !other)
+            return;
+
+        GmArgs args;
+        args.AddStr(
+            g_api,
+            "Item Editor is disabled during Daily Challenges.");
+        args.AddReal(3.0);
+
+        RValue result{};
+        g_api->CallScript(
+            "gml_Script_ShowUpdate",
+            self,
+            other,
+            &result,
+            args.Count(),
+            args.Build());
+    }
+
     void OnInventoryAssignment(
         const char*,
-        CInstance*,
-        CInstance*,
+        CInstance* self,
+        CInstance* other,
         RValue*,
         int argc,
         RValue** argv,
@@ -40,7 +93,24 @@ namespace
 
         const int handle =
             g_api->ResolveInstance(reinterpret_cast<uint32_t*>(argv[0]));
+        if (handle == 0)
+            return;
+
         std::string error;
+        if (IsOwnedByDailyChallenger(handle, error))
+        {
+            Log("Item editor is disabled for Daily Challenge characters");
+            ShowDailyChallengeBlockedMessage(self, other);
+            return;
+        }
+        if (!error.empty())
+        {
+            Log(std::string(
+                "Item editor is disabled because Daily Challenge status "
+                "could not be verified: ") + error);
+            return;
+        }
+
         switch (g_editorWindow->OpenForItem(handle, error))
         {
         case ItemEditorWindow::OpenResult::Opened:
