@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <sstream>
 #include <unordered_set>
 
@@ -46,6 +47,17 @@ namespace
         case GunLoudness::Silenced: return "Silenced";
         }
         return "Loud";
+    }
+
+    /// Converts an in-game number to the non-negative integer shown in the UI.
+    int ToNonNegativeInteger(double value)
+    {
+        if (!std::isfinite(value) || value <= 0.0)
+            return 0;
+
+        const double maximum =
+            static_cast<double>((std::numeric_limits<int>::max)());
+        return static_cast<int>((std::min)(std::round(value), maximum));
     }
 
     /// Rebuilds a gun name while preserving adjectives not owned by the editor.
@@ -134,6 +146,9 @@ std::optional<GunSnapshot> GunEditor::CaptureSnapshot(
     double noise = 0.0;
     double audibleThroughWalls = 0.0;
     double secondsBetweenUses = 0.0;
+    double uses = 0.0;
+    double capacity = 0.0;
+    double chargeRate = 0.0;
     if (!properties.ReadNumber(
             handle,
             "WeaponDamageMask",
@@ -149,7 +164,8 @@ std::optional<GunSnapshot> GunEditor::CaptureSnapshot(
             handle,
             "SecondsBetweenUses",
             secondsBetweenUses,
-            error))
+            error) ||
+        !properties.ReadNumber(handle, "ChargeRate", chargeRate, error))
     {
         return std::nullopt;
     }
@@ -157,6 +173,23 @@ std::optional<GunSnapshot> GunEditor::CaptureSnapshot(
     const auto mask = static_cast<uint64_t>(damageMask);
     snapshot.parameters.concussive = (mask & 2u) != 0;
     snapshot.parameters.armourPiercing = (mask & 4u) != 0;
+    if (snapshot.parameters.concussive &&
+        (!properties.ReadNumber(handle, "Uses", uses, error) ||
+         !properties.ReadNumber(handle, "Capacity", capacity, error)))
+    {
+        return std::nullopt;
+    }
+    snapshot.parameters.noise = noise;
+    snapshot.parameters.audibleThroughWalls = audibleThroughWalls > 0.5;
+    snapshot.parameters.secondsBetweenFire = secondsBetweenUses;
+    if (snapshot.parameters.concussive)
+    {
+        snapshot.parameters.uses = ToNonNegativeInteger(uses);
+        snapshot.parameters.capacity = capacity < 0.0
+            ? 16
+            : ToNonNegativeInteger(capacity);
+    }
+    snapshot.parameters.infiniteAmmo = chargeRate >= 99.999;
     if (noise <= 0.05 + 0.0001)
         snapshot.parameters.loudness = GunLoudness::Silenced;
     else if (audibleThroughWalls > 0.5)
@@ -200,10 +233,25 @@ std::optional<GunSnapshot> GunEditor::ApplyParameters(
     const int64_t damageMask =
         (parameters.concussive ? 2u : 1u) |
         (parameters.armourPiercing ? 4u : 0u);
-    const double secondsBetweenUses =
-        parameters.fireMode == GunFireMode::Automatic ? 0.1 :
-        parameters.fireMode == GunFireMode::Quickfire ? 0.3 :
-        2.0 / 3.0;
+    if (!std::isfinite(parameters.noise) ||
+        parameters.noise < 0.0 ||
+        parameters.noise > 1.0)
+    {
+        error = "Noise must be between 0 and 1";
+        return std::nullopt;
+    }
+    if (!std::isfinite(parameters.secondsBetweenFire) ||
+        parameters.secondsBetweenFire < 0.0)
+    {
+        error = "Seconds between fire must not be negative";
+        return std::nullopt;
+    }
+    if (parameters.concussive &&
+        (parameters.uses < 0 || parameters.capacity < 0))
+    {
+        error = "Ammo, uses, and capacity must not be negative";
+        return std::nullopt;
+    }
 
     if (!properties.WriteInt64(
             handle,
@@ -218,42 +266,35 @@ std::optional<GunSnapshot> GunEditor::ApplyParameters(
         !properties.WriteReal(
             handle,
             "SecondsBetweenUses",
-            secondsBetweenUses,
+            parameters.secondsBetweenFire,
+            error) ||
+        !properties.WriteReal(handle, "Noise", parameters.noise, error) ||
+        !properties.WriteReal(
+            handle,
+            "AudibleThroughWalls",
+            parameters.audibleThroughWalls ? 1.0 : 0.0,
+            error) ||
+        !properties.WriteReal(
+            handle,
+            "ChargeRate",
+            parameters.infiniteAmmo ? 100.0 : 0.0,
             error))
     {
         return std::nullopt;
     }
 
-    if (parameters.loudness == GunLoudness::Silenced)
-    {
-        if (!properties.WriteReal(handle, "Noise", 0.05, error) ||
-            !properties.WriteReal(
-                handle,
-                "AudibleThroughWalls",
-                0.0,
-                error))
-        {
-            return std::nullopt;
-        }
-    }
-    else if (!properties.WriteReal(handle, "Noise", 0.6, error) ||
-             !properties.WriteReal(
-                 handle,
-                 "AudibleThroughWalls",
-                 parameters.loudness == GunLoudness::Loud ? 1.0 : 0.0,
-                 error))
-    {
-        return std::nullopt;
-    }
-
-    double capacity = -1.0;
-    if (!properties.ReadNumber(handle, "Capacity", capacity, error))
-        return std::nullopt;
     if (parameters.concussive)
     {
-        if (capacity < 0.0 &&
-            (!properties.WriteReal(handle, "Capacity", 16.0, error) ||
-             !properties.WriteReal(handle, "Uses", 16.0, error)))
+        if (!properties.WriteReal(
+                handle,
+                "Capacity",
+                static_cast<double>(parameters.capacity),
+                error) ||
+            !properties.WriteReal(
+                handle,
+                "Uses",
+                static_cast<double>(parameters.uses),
+                error))
         {
             return std::nullopt;
         }

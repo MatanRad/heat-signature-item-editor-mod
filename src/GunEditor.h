@@ -22,12 +22,17 @@ enum class GunFireMode
 
 struct GunParameters
 {
-    // These are the four independent choices exposed by the editor.
-    // ApplyParameters() translates them into the correlated game fields and traits.
+    // ApplyParameters() translates the primary choices into correlated traits.
     bool         concussive = false;
     GunLoudness  loudness = GunLoudness::Loud;
     GunFireMode  fireMode = GunFireMode::Normal;
     bool         armourPiercing = false;
+    double       noise = 0.6;
+    bool         audibleThroughWalls = true;
+    double       secondsBetweenFire = 2.0 / 3.0;
+    int          uses = 16;
+    int          capacity = 16;
+    bool         infiniteAmmo = false;
 };
 
 struct GunSnapshot

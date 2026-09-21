@@ -95,18 +95,23 @@ Read one property:
 
 ```js
 gun = inventory().find(item => item.type === "Gun")
+gun.Value
+gun.Ammo
 hs.getProperty(gun.handle, "WeaponDamageMask")
 ```
 
 Read an array using a separate logical count:
 
 ```js
+gun.Traits
 hs.getArray(gun.handle, "Traits", "TraitCount")
 ```
 
 Write a property:
 
 ```js
+gun.Ammo = 72
+gun.set("WeaponDamageMask", 5)
 hs.setProperty(gun.handle, "Ammo", 72)
 hs.setProperty(gun.handle, "WeaponDamageMask", 5)
 ```

@@ -43,8 +43,14 @@ const MAX_ARRAY_LENGTH = 4096;
 const KIND_MASK = 0x00ffffff;
 
 function requireReadable(address, label) {
-  if (address.isNull() || Process.findRangeByAddress(address) === null) {
+  if (address.isNull()) {
     throw new Error(`${label} is null or unreadable: ${address}`);
+  }
+
+  try {
+    address.readU8();
+  } catch (error) {
+    throw new Error(`${label} is null or unreadable: ${address}: ${error}`);
   }
 }
 
@@ -453,13 +459,87 @@ export class HeatSignatureRuntime {
       this.getProperty(handle, "BaseName")?.value ??
       this.getProperty(handle, "Description")?.value ??
       "(unnamed)";
-    return {
+    const runtime = this;
+    const item = {
       index,
       handle,
       name,
       type: this.getProperty(handle, "Type")?.value,
-      instance: this.resolveCInstance(handle)
+      instance: this.resolveCInstance(handle),
+
+      get(propertyName, arrayIndex = NO_ARRAY_INDEX) {
+        return runtime.getProperty(handle, propertyName, arrayIndex)?.value;
+      },
+
+      set(propertyName, value, arrayIndex = NO_ARRAY_INDEX) {
+        return runtime.setProperty(handle, propertyName, value, arrayIndex);
+      },
+
+      getArray(propertyName, logicalLengthName = null) {
+        return runtime
+          .getArray(handle, propertyName, logicalLengthName)
+          ?.map(entry => entry?.value);
+      },
+
+      properties(propertyNames) {
+        const result = {};
+        for (const propertyName of propertyNames) {
+          result[propertyName] = this.get(propertyName);
+        }
+        return result;
+      },
+
+      allProperties(includeKinds = false) {
+        return runtime.dumpProperties(handle, includeKinds);
+      },
+
+      propertyNames() {
+        return runtime.variableNames();
+      },
+
+      toJSON() {
+        return {
+          index: this.index,
+          handle: this.handle,
+          name: this.name,
+          type: this.type,
+          instance: this.instance
+        };
+      }
     };
+
+    return new Proxy(item, {
+      get(target, property, receiver) {
+        if (typeof property !== "string" || Reflect.has(target, property)) {
+          return Reflect.get(target, property, receiver);
+        }
+        if (!runtime.getVariableIds().has(property)) {
+          return undefined;
+        }
+
+        const value = runtime.getProperty(handle, property);
+        if (value?.kind === "array") {
+          const logicalLength =
+            property === "Traits" ? "TraitCount" : null;
+          return target.getArray(property, logicalLength);
+        }
+        return value?.value;
+      },
+
+      set(target, property, value, receiver) {
+        if (
+          typeof property === "string" &&
+          runtime.getVariableIds().has(property)
+        ) {
+          runtime.setProperty(handle, property, value);
+          if (property === "Name") {
+            target.name = value;
+          }
+          return true;
+        }
+        return Reflect.set(target, property, value, receiver);
+      }
+    });
   }
 
   inventory() {

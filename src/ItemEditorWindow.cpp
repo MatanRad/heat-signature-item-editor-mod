@@ -1,75 +1,85 @@
 #include "ItemEditorWindow.h"
 
-#include "GunEditor.h"
+#include "GunEditorLayout.h"
+#include "ItemEditorLayout.h"
+#include "MeleeEditorLayout.h"
 
 #include <imgui.h>
 
+#include <memory>
 #include <mutex>
-#include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 class ItemEditorWindow::Impl
 {
 public:
-    /// Creates a window controller backed by the loader API.
     explicit Impl(const HS_ModApi* api)
-        : m_api(api), m_gunEditor(api)
+        : m_api(api)
     {
+        m_layouts.push_back(std::make_unique<GunEditorLayout>(api));
+        m_layouts.push_back(std::make_unique<MeleeEditorLayout>(api));
     }
 
-    /// Captures a supported item and starts a fresh window session.
     OpenResult OpenForItem(int handle, std::string& error)
     {
-        auto snapshot = m_gunEditor.CaptureSnapshot(handle, error);
-        if (!snapshot)
+        error.clear();
+        for (const auto& layout : m_layouts)
         {
-            return error == "Selected item is not a gun"
-                ? OpenResult::UnsupportedItem
-                : OpenResult::Failed;
+            std::unique_ptr<ItemEditorLayout> snapshot;
+            const ItemEditorLayout::CaptureResult result =
+                layout->Capture(handle, snapshot, error);
+            if (result == ItemEditorLayout::CaptureResult::Captured)
+            {
+                std::lock_guard<std::mutex> lock(m_mutex);
+                m_state.Open(std::move(snapshot));
+                return OpenResult::Opened;
+            }
+
+            if (result == ItemEditorLayout::CaptureResult::Failed)
+                return OpenResult::Failed;
         }
 
-        std::lock_guard<std::mutex> lock(m_mutex);
-        m_state.Open(std::move(*snapshot));
-        return OpenResult::Opened;
+        return OpenResult::UnsupportedItem;
     }
 
-    /// Applies the latest requested parameters on the calling game thread.
     void ProcessPendingChanges()
     {
-        int handle = 0;
-        GunParameters parameters;
+        std::unique_ptr<ItemEditorLayout> pending;
         {
             std::lock_guard<std::mutex> lock(m_mutex);
-            if (!m_state.TakePendingUpdate(handle, parameters))
-                return;
+            pending = m_state.TakePendingUpdate();
         }
+        if (!pending)
+            return;
 
+        const int handle = pending->GetHandle();
         std::string error;
-        auto snapshot = m_gunEditor.ApplyParameters(
-            handle,
-            parameters,
-            error);
+        const bool succeeded = pending->Apply(error);
 
         std::lock_guard<std::mutex> lock(m_mutex);
-        m_state.CompleteUpdate(handle, std::move(snapshot), error);
-        if (!error.empty())
+        m_state.CompleteUpdate(handle, std::move(pending), succeeded, error);
+        if (!succeeded && !error.empty())
             m_api->Log("ItemEditor", error.c_str());
     }
 
-    /// Renders one frame using a copy of state, then publishes UI changes.
     void Draw()
     {
-        EditorState local;
+        std::unique_ptr<ItemEditorLayout> local;
+        bool resetLayout = false;
+        std::string status;
         {
             std::lock_guard<std::mutex> lock(m_mutex);
-            local = m_state;
+            if (!m_state.open || !m_state.draft)
+                return;
+            local = m_state.draft->Clone();
+            resetLayout = m_state.resetLayout;
+            status = m_state.status;
         }
-        if (!local.open || !local.selected)
-            return;
 
         const float uiScale = CalculateUiScale();
-        bool open = local.open;
+        bool open = true;
         bool changed = false;
 
         const ImGuiStyle& style = ImGui::GetStyle();
@@ -86,7 +96,7 @@ public:
             ImGuiStyleVar_ItemInnerSpacing,
             Scale(style.ItemInnerSpacing, uiScale));
 
-        if (local.resetLayout)
+        if (resetLayout)
         {
             const ImGuiIO& io = ImGui::GetIO();
             ImGui::SetNextWindowPos(
@@ -100,22 +110,20 @@ public:
             ImVec2(650.0f * uiScale, 1000.0f * uiScale));
 
         if (ImGui::Begin(
-                "Item Editor - Gun",
+                local->GetWindowTitle(),
                 &open,
                 ImGuiWindowFlags_AlwaysAutoResize))
         {
             ImGui::SetWindowFontScale(uiScale);
-            DrawGunControls(local, changed);
+            local->DrawControls(changed);
+            if (!status.empty())
+                ImGui::TextWrapped("%s", status.c_str());
         }
         ImGui::End();
         ImGui::PopStyleVar(4);
 
         std::lock_guard<std::mutex> lock(m_mutex);
-        m_state.CommitFrame(
-            local.selected->handle,
-            open,
-            local.draft,
-            changed);
+        m_state.CommitFrame(std::move(local), open, changed);
     }
 
 private:
@@ -123,101 +131,90 @@ private:
     {
         bool open = false;
         bool resetLayout = false;
-        std::optional<GunSnapshot> selected;
-        GunParameters draft;
-        std::optional<GunParameters> pendingUpdate;
+        std::unique_ptr<ItemEditorLayout> selected;
+        std::unique_ptr<ItemEditorLayout> draft;
+        std::unique_ptr<ItemEditorLayout> pendingUpdate;
         std::string status;
 
-        /// Returns the state to its no-selection baseline.
         void Reset()
         {
             open = false;
             resetLayout = false;
             selected.reset();
-            draft = {};
+            draft.reset();
             pendingUpdate.reset();
             status.clear();
         }
 
-        /// Opens a newly selected item and requests fresh window geometry.
-        void Open(GunSnapshot snapshot)
+        void Open(std::unique_ptr<ItemEditorLayout> snapshot)
         {
             Reset();
             open = true;
             resetLayout = true;
-            draft = snapshot.parameters;
+            draft = snapshot->Clone();
             selected = std::move(snapshot);
         }
 
-        /// Hides the window while retaining its current editing session.
         void Close()
         {
             open = false;
             resetLayout = false;
         }
 
-        /// Atomically consumes the one-slot render-to-game-thread mailbox.
-        bool TakePendingUpdate(int& handle, GunParameters& parameters)
+        std::unique_ptr<ItemEditorLayout> TakePendingUpdate()
         {
-            if (!selected || !pendingUpdate)
-                return false;
-
-            handle = selected->handle;
-            parameters = *pendingUpdate;
-            pendingUpdate.reset();
-            return true;
+            return std::move(pendingUpdate);
         }
 
-        /// Publishes an applied snapshot unless another item was selected meanwhile.
         void CompleteUpdate(
             int expectedHandle,
-            std::optional<GunSnapshot> snapshot,
+            std::unique_ptr<ItemEditorLayout> updated,
+            bool succeeded,
             const std::string& error)
         {
-            if (!selected || selected->handle != expectedHandle)
+            if (!selected || selected->GetHandle() != expectedHandle)
                 return;
 
-            if (!snapshot)
+            if (!succeeded)
             {
                 status = error;
                 return;
             }
 
-            selected = std::move(snapshot);
+            selected = std::move(updated);
             if (!pendingUpdate)
-                draft = selected->parameters;
+                draft = selected->Clone();
             status.clear();
         }
 
-        /// Commits one render frame and replaces any older pending parameters.
         void CommitFrame(
-            int expectedHandle,
+            std::unique_ptr<ItemEditorLayout> frameDraft,
             bool remainsOpen,
-            const GunParameters& frameDraft,
             bool changed)
         {
-            if (!selected || selected->handle != expectedHandle)
+            if (!selected ||
+                selected->GetHandle() != frameDraft->GetHandle())
+            {
                 return;
+            }
 
             if (!remainsOpen)
                 Close();
             resetLayout = false;
-            draft = frameDraft;
+            draft = frameDraft->Clone();
             if (changed)
             {
-                pendingUpdate = frameDraft;
+                pendingUpdate = std::move(frameDraft);
                 status.clear();
             }
         }
     };
 
-    /// Scales an ImGui spacing vector without changing the shared style.
     static ImVec2 Scale(ImVec2 value, float scale)
     {
         return ImVec2(value.x * scale, value.y * scale);
     }
 
-    /// Calculates a per-window scale from a 1920x1080 baseline.
     static float CalculateUiScale()
     {
         const ImGuiIO& io = ImGui::GetIO();
@@ -231,70 +228,8 @@ private:
         return scale;
     }
 
-    /// Draws the gun-specific controls and updates the local draft.
-    static void DrawGunControls(EditorState& state, bool& changed)
-    {
-        ImGui::TextUnformatted(state.selected->name.c_str());
-        ImGui::Text("Instance: %d", state.selected->handle);
-        ImGui::TextDisabled("Changes apply automatically");
-        ImGui::Separator();
-
-        int damageType = state.draft.concussive ? 1 : 0;
-        ImGui::TextUnformatted("Damage");
-        changed |= ImGui::RadioButton("Lethal", &damageType, 0);
-        ImGui::SameLine();
-        changed |= ImGui::RadioButton("Concussive", &damageType, 1);
-        state.draft.concussive = damageType == 1;
-
-        int loudness = static_cast<int>(state.draft.loudness);
-        ImGui::TextUnformatted("Sound");
-        changed |= ImGui::RadioButton(
-            "Loud",
-            &loudness,
-            static_cast<int>(GunLoudness::Loud));
-        ImGui::SameLine();
-        changed |= ImGui::RadioButton(
-            "Quiet",
-            &loudness,
-            static_cast<int>(GunLoudness::Quiet));
-        ImGui::SameLine();
-        changed |= ImGui::RadioButton(
-            "Silenced",
-            &loudness,
-            static_cast<int>(GunLoudness::Silenced));
-        state.draft.loudness = static_cast<GunLoudness>(loudness);
-
-        int fireMode = static_cast<int>(state.draft.fireMode);
-        ImGui::TextUnformatted("Fire mode");
-        changed |= ImGui::RadioButton(
-            "Normal",
-            &fireMode,
-            static_cast<int>(GunFireMode::Normal));
-        ImGui::SameLine();
-        changed |= ImGui::RadioButton(
-            "Quickfire",
-            &fireMode,
-            static_cast<int>(GunFireMode::Quickfire));
-        ImGui::SameLine();
-        changed |= ImGui::RadioButton(
-            "Automatic",
-            &fireMode,
-            static_cast<int>(GunFireMode::Automatic));
-        state.draft.fireMode = static_cast<GunFireMode>(fireMode);
-
-        changed |= ImGui::Checkbox(
-            "Armour-piercing",
-            &state.draft.armourPiercing);
-        ImGui::Separator();
-
-        if (state.pendingUpdate)
-            ImGui::TextUnformatted("Applying changes...");
-        if (!state.status.empty())
-            ImGui::TextWrapped("%s", state.status.c_str());
-    }
-
     const HS_ModApi* m_api;
-    GunEditor m_gunEditor;
+    std::vector<std::unique_ptr<ItemEditorLayout>> m_layouts;
     std::mutex m_mutex;
     EditorState m_state;
 };
@@ -306,7 +241,6 @@ ItemEditorWindow::ItemEditorWindow(const HS_ModApi* api)
 
 ItemEditorWindow::~ItemEditorWindow() = default;
 
-/// Opens the editor for a live item selected on the game thread.
 ItemEditorWindow::OpenResult ItemEditorWindow::OpenForItem(
     int handle,
     std::string& error)
@@ -314,13 +248,11 @@ ItemEditorWindow::OpenResult ItemEditorWindow::OpenForItem(
     return m_impl->OpenForItem(handle, error);
 }
 
-/// Pumps the pending parameter mailbox from a game-thread hook.
 void ItemEditorWindow::ProcessPendingChanges()
 {
     m_impl->ProcessPendingChanges();
 }
 
-/// Draws the editor from the loader's ImGui render callback.
 void ItemEditorWindow::Draw()
 {
     m_impl->Draw();

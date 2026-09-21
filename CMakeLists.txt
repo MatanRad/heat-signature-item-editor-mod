@@ -22,9 +22,16 @@ add_library(ItemEditor SHARED
     src/GameMakerPropertyAccess.h
     src/GunEditor.cpp
     src/GunEditor.h
+    src/GunEditorLayout.cpp
+    src/GunEditorLayout.h
     src/ItemEditor.cpp
+    src/ItemEditorLayout.h
     src/ItemEditorWindow.cpp
     src/ItemEditorWindow.h
+    src/MeleeEditor.cpp
+    src/MeleeEditor.h
+    src/MeleeEditorLayout.cpp
+    src/MeleeEditorLayout.h
 )
 
 target_compile_features(ItemEditor PRIVATE cxx_std_17)
