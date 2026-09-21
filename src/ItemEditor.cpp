@@ -72,6 +72,8 @@ namespace
     void OnImGuiDraw(void*)
     {
         g_editorWindow->Draw();
+        if (g_editorWindow->TakeCloseRequest())
+            g_api->SetImGuiVisible(0);
     }
 }
 

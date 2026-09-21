@@ -30,6 +30,9 @@ public:
     /// Draws and updates the editor on the ImGui render thread.
     void Draw();
 
+    /// Reports whether the editor window was closed since the last call.
+    bool TakeCloseRequest();
+
 private:
     class Impl;
     std::unique_ptr<Impl> m_impl;

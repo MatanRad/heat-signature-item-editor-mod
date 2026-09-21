@@ -1,6 +1,7 @@
 #include "ItemEditorWindow.h"
 
 #include "GunEditorLayout.h"
+#include "GadgetEditorLayout.h"
 #include "ItemEditorLayout.h"
 #include "MeleeEditorLayout.h"
 
@@ -20,6 +21,15 @@ public:
     {
         m_layouts.push_back(std::make_unique<GunEditorLayout>(api));
         m_layouts.push_back(std::make_unique<MeleeEditorLayout>(api));
+        m_layouts.push_back(std::make_unique<GadgetEditorLayout>(api));
+    }
+
+    bool TakeCloseRequest()
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        const bool closeRequested = m_state.closeRequested;
+        m_state.closeRequested = false;
+        return closeRequested;
     }
 
     OpenResult OpenForItem(int handle, std::string& error)
@@ -135,6 +145,7 @@ private:
         std::unique_ptr<ItemEditorLayout> draft;
         std::unique_ptr<ItemEditorLayout> pendingUpdate;
         std::string status;
+        bool closeRequested = false;
 
         void Reset()
         {
@@ -159,6 +170,7 @@ private:
         {
             open = false;
             resetLayout = false;
+            closeRequested = true;
         }
 
         std::unique_ptr<ItemEditorLayout> TakePendingUpdate()
@@ -256,4 +268,9 @@ void ItemEditorWindow::ProcessPendingChanges()
 void ItemEditorWindow::Draw()
 {
     m_impl->Draw();
+}
+
+bool ItemEditorWindow::TakeCloseRequest()
+{
+    return m_impl->TakeCloseRequest();
 }

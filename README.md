@@ -20,6 +20,9 @@ The gun editor currently supports:
   recovery, strike noise, and knockback presets;
 - collapsed melee advanced controls for custom dash range, strike interval,
   sound radius, knockback speed, and dash speed.
+- non-grenade gadgets with capacity, recharge, self-charging, and applicable
+  standard, long, and extreme range presets, plus capability-gated advanced
+  controls.
 
 The editor updates the gun's runtime fields and controlled trait entries,
 rebuilds its display name, and asks the game to recalculate its sprite,
@@ -72,6 +75,9 @@ Override `HEATSIG_MODLOADER_DIR` if the loader checkout is elsewhere. Set
 - `src/MeleeEditorLayout.*` adapts melee editing to the layout seam.
 - `src/MeleeEditor.*` translates melee parameters into Heat Signature
   properties and traits.
+- `src/GadgetEditorLayout.*` adapts gadget editing to the layout seam.
+- `src/GadgetEditor.*` translates shared and family-specific gadget parameters
+  into Heat Signature properties and traits.
 - `src/GameMakerPropertyAccess.*` provides mod-local typed property access.
 - `docs/gun-research.txt` records observed gun-property and sprite behavior.
 - `docs/melee-research.txt` records observed melee-property behavior.

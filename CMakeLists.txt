@@ -20,6 +20,10 @@ endif()
 add_library(ItemEditor SHARED
     src/GameMakerPropertyAccess.cpp
     src/GameMakerPropertyAccess.h
+    src/GadgetEditor.cpp
+    src/GadgetEditor.h
+    src/GadgetEditorLayout.cpp
+    src/GadgetEditorLayout.h
     src/GunEditor.cpp
     src/GunEditor.h
     src/GunEditorLayout.cpp
