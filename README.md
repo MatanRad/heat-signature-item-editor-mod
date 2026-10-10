@@ -1,55 +1,30 @@
-# Heat Signature Item Editor
+# Heat Signature Mods
 
-A native item editor mod for
+Independent native mods for
 [Heat Signature Mod Loader](https://github.com/piepieonline/HeatSignatureModLoader).
+Each mod builds into its own DLL and can be installed separately.
 
-## Features
+## Mods
 
-Hold **Ctrl** and click a supported item in the inventory to open its editor.
-Changes apply automatically on the game thread.
-
-The gun editor currently supports:
-
-- lethal or concussive damage;
-- loud, quiet, or silenced sound behavior;
-- normal, quickfire, or automatic fire rate;
-- regular or armour-piercing ammunition.
-- collapsed advanced controls for noise, wall audibility, firing interval,
-  concussive uses and capacity, and infinite ammunition.
-- melee weapons with damage, armour-piercing, dash range, auto-strike,
-  recovery, strike noise, and knockback presets;
-- collapsed melee advanced controls for custom dash range, strike interval,
-  sound radius, knockback speed, and dash speed.
-- non-grenade gadgets with capacity, recharge, self-charging, and applicable
-  standard, long, and extreme range presets, plus capability-gated advanced
-  controls.
-
-The editor updates the gun's runtime fields and controlled trait entries,
-rebuilds its display name, and asks the game to recalculate its sprite,
-attachment, and animations.
-
-Selecting a primary preset resets only the advanced values that it controls.
-Infinite ammunition remains unchanged by preset selection.
+| Mod | Description | CMake target | Build option |
+|---|---|---|---|
+| [Item Editor](mods/item-editor/README.md) | Ctrl-click inventory items to edit guns, melee weapons, and gadgets | `ItemEditor` | `HS_BUILD_ITEM_EDITOR` (default `ON`) |
 
 ## Requirements
 
-- A 32-bit Windows build of Heat Signature Mod Loader with API version 3.
-- A local checkout of the mod loader for its public headers.
+- A 32-bit Windows build of Heat Signature Mod Loader. See each mod's README
+  for its required loader API version.
+- A local checkout of the loader for its public headers.
 - CMake 3.26 or newer.
 - Visual Studio 2022 with the Win32 C++ toolchain.
-- vcpkg with the `imgui` package and Win32/DX9 bindings.
+- vcpkg; the root [manifest](vcpkg.json) pins the shared dependency baseline.
+  It currently includes ImGui with Win32/DX9 bindings for ItemEditor.
 
 ## Building
 
-The default layout expects this repository and the loader to be siblings:
-
-```text
-projects/
-  HeatSignatureModLoader/
-  HeatSignatureItemEditor/
-```
-
-Configure and build:
+Configure from the repository root. By default, the loader checkout is expected
+at `..\HeatSignatureModLoader`; the name of this repository's directory does
+not matter. Override `HEATSIG_MODLOADER_DIR` if the loader is elsewhere.
 
 ```powershell
 cmake -S . -B build -A Win32 `
@@ -59,27 +34,65 @@ cmake -S . -B build -A Win32 `
 cmake --build build --config Release
 ```
 
-Override `HEATSIG_MODLOADER_DIR` if the loader checkout is elsewhere. Set
-`HEATSIG_DIR` during configuration to copy `ItemEditor.dll` into the game's
-`mods` folder after each build.
+The build command builds all enabled mods. To build only ItemEditor:
 
-## Architecture
+```powershell
+cmake --build build --config Release --target ItemEditor
+```
 
-- `src/ItemEditor.cpp` wires loader hooks to the editor.
-- `src/ItemEditorWindow.*` owns shared ImGui session state and the
-  render-to-game-thread handoff.
-- `src/ItemEditorLayout.h` defines the item-layout seam used by the shared
-  window controller.
-- `src/GunEditorLayout.*` adapts gun editing to that layout seam.
-- `src/GunEditor.*` translates gun parameters into Heat Signature properties.
-- `src/MeleeEditorLayout.*` adapts melee editing to the layout seam.
-- `src/MeleeEditor.*` translates melee parameters into Heat Signature
-  properties and traits.
-- `src/GadgetEditorLayout.*` adapts gadget editing to the layout seam.
-- `src/GadgetEditor.*` translates shared and family-specific gadget parameters
-  into Heat Signature properties and traits.
-- `src/GameMakerPropertyAccess.*` provides mod-local typed property access.
-- `docs/gun-research.txt` records observed gun-property and sprite behavior.
-- `docs/melee-research.txt` records observed melee-property behavior.
-- [`frida/README.md`](frida/README.md) explains dynamic exploration and the
-  reusable Frida agents.
+Use each mod's `HS_BUILD_*` option at configuration time to exclude it from the
+build, for example `-DHS_BUILD_ITEM_EDITOR=OFF`. These options select DLL
+targets, not vcpkg manifest dependencies.
+
+If reusing a build directory configured before this restructuring, run the
+configure command again. The generated Visual Studio solution is now named
+`HeatSignatureMods.sln`; the ItemEditor target and DLL name are unchanged.
+
+## Installation
+
+DLLs are written to `build\bin\<configuration>\`, for example
+`build\bin\Release\ItemEditor.dll`. Copy only the mods you want into the game's
+`mods` folder.
+
+Alternatively, set `HEATSIG_DIR` during configuration to copy each DLL there
+after it builds:
+
+```powershell
+cmake -S . -B build `
+  "-DHEATSIG_DIR=C:\Program Files (x86)\Steam\steamapps\common\Heat Signature"
+```
+
+Disabling a build option does not remove an already installed DLL.
+
+## Repository layout
+
+- [mods/](mods/) contains each mod's implementation, build target, user guide,
+  and supporting research.
+- [cmake/HeatSignatureMods.cmake](cmake/HeatSignatureMods.cmake) applies common
+  target defaults and optional deployment.
+- [frida/](frida/README.md) contains shared investigation tools and historical
+  prototypes, not production mod code.
+- [AGENTS.md](AGENTS.md) describes repository-wide development rules.
+
+Loader internals remain in the separate loader repository. Runtime state and
+item-specific behavior remain owned by their mod.
+
+## Adding a mod
+
+1. Create `mods\<mod-name>\` with a `CMakeLists.txt`, `README.md`, and `src\`.
+2. Define a uniquely named `SHARED` target with its own loader entry point.
+3. Call `heat_signature_configure_mod(<target>)` to apply C++17, loader header
+   access, DLL output location, and optional deployment. Set the mod's own
+   include directories and link only its required dependencies.
+4. Add an explicit `HS_BUILD_*` option and guarded `add_subdirectory` to the
+   root [CMakeLists.txt](CMakeLists.txt), and add the mod to the catalog above.
+5. Keep mod-specific research and tests with the mod. Extract shared C++ code
+   only when multiple implemented mods need it; do not share mutable state.
+6. Build and test the mod independently, then alongside other installed mods,
+   checking hook interactions and shared ImGui visibility where applicable.
+
+## License
+
+Source is licensed under [CC BY-NC 4.0](LICENSE.md). Preserve required
+attribution, license references, and change notices when redistributing or
+adapting it, including when packaging individual mods.
